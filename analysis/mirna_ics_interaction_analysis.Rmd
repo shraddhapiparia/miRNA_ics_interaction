@@ -6,13 +6,13 @@ output:
     toc_float: true
     code_folding: hide
 params:
-  cra_counts: "data/CRA/2022-08-16_CRA_1159_exceRpt_miRNA_ReadCountscopy.csv"
-  cra_pheno: "data/CRA/PhenotypeInfo.csv"
-  cra_link: "data/CRA/cra_shortened_phenotype_files10-11.csv"
-  camp_counts: "data/CAMP/CAMP.492.COUNT.csv"
-  camp_pheno: "data/CAMP/camp_pheno_2022-08-04.tsv"
-  camp_link: "data/CAMP/shortened_phenotype_files_ver5.csv"
-  outdir: "results"
+  cra_counts: "../data/CRA/2022-08-16_CRA_1159_exceRpt_miRNA_ReadCountscopy.csv"
+  cra_pheno: "../data/CRA/PhenotypeInfo.csv"
+  cra_link: "../data/CRA/cra_shortened_phenotype_files10-11.csv"
+  camp_counts: "../data/CAMP/CAMP.492.COUNT.csv"
+  camp_pheno: "../data/CAMP/camp_pheno_2022-08-04.tsv"
+  camp_link: "../data/CAMP/shortened_phenotype_files_ver5.csv"
+  outdir: "../results"
   highlight_mir: "hsa-miR-584-5p"
   min_count: 5
   min_prop_samples: 0.5
@@ -21,6 +21,7 @@ params:
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
 set.seed(2025)
+# rm(list=ls())
 ```
 
 # Overview
@@ -62,12 +63,11 @@ dir.create(file.path(outdir, "figures"), recursive = TRUE, showWarnings = FALSE)
 
 ```{r helpers}
 filter_mirnas <- function(count_df, min_count = 5, min_prop_samples = 0.5) {
-  keep <- rowSums(count_df[, -1, drop = FALSE] > min_count) >= ((ncol(count_df) - 1) * min_prop_samples)
-  filtered <- count_df[keep, , drop = FALSE]
-  mat <- as.matrix(filtered[, -1, drop = FALSE])
-  rownames(mat) <- filtered[[1]]
-  storage.mode(mat) <- "numeric"
-  mat
+  mat <- as.matrix(count_df[, -1, drop = FALSE])
+  rownames(mat) <- count_df[[1]]
+  class(mat) <- "numeric"
+  keep <- rowSums(mat > min_count) >= (ncol(mat) * min_prop_samples)
+  mat[keep, , drop = FALSE]
 }
 
 norm_raw_log <- function(mat) log2(mat + 1)
@@ -364,6 +364,7 @@ compute_auc_summary <- function(log_mat, pheno_df, mir_name, outcome_col, treatm
 # CAMP cohort
 
 ```{r camp-load}
+
 camp_counts <- read.csv(params$camp_counts, check.names = FALSE)
 camp_pheno <- read.table(params$camp_pheno, sep = "\t", header = TRUE, check.names = FALSE)
 camp_link <- read.csv(params$camp_link, check.names = FALSE)
@@ -371,8 +372,8 @@ camp_link <- read.csv(params$camp_link, check.names = FALSE)
 camp_pheno <- camp_pheno[camp_pheno$TG != 2, , drop = FALSE]
 camp_mat <- filter_mirnas(camp_counts, params$min_count, params$min_prop_samples)
 
-camp_pheno_merged <- merge(camp_pheno, camp_link, by.x = "camp", by.y = "CAMP_ID")
-rownames(camp_pheno_merged) <- camp_pheno_merged$row.names.CAMP_492_COUNT.Trans.
+camp_pheno_merged <- merge(camp_pheno, camp_link, by.x = "camp", by.y = "CAMP_ID", all=FALSE)
+rownames(camp_pheno_merged) <- camp_pheno_merged$`row.names(CAMP_492_COUNT.Trans)`
 
 camp_pheno_merged <- camp_pheno_merged |>
   filter(!is.na(EDHOS_cum_Y1)) |>
@@ -628,7 +629,7 @@ cra_auc <- compute_auc_summary(
   mir_name = params$highlight_mir,
   outcome_col = "outcome",
   treatment_col = "treatment",
-  covars = c("pctpred_fev1_pre_BD", "G19B_.age_onset.", "bmi_pct", "age.x")
+  covars = c("pctpred_fev1_pre_BD", "`G19B_(age_onset)`", "bmi_pct", "age.x")
 )
 
 write_csv(cra_auc$stratified_auc, file.path(outdir, "models", "cra_mir584_auc_stratified.csv"))
@@ -648,3 +649,4 @@ shared_hits <- inner_join(
 
 write_csv(shared_hits, file.path(outdir, "models", "shared_miRNA_interaction_summary.csv"))
 head(shared_hits)
+```
