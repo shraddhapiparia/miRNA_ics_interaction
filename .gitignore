@@ -1,0 +1,28 @@
+# R project
+.Rhistory
+.RData
+.Rproj.user
+.Ruserdata
+
+# data files
+data/*
+!data/.gitkeep
+
+# results
+results/*
+
+# system files
+.DS_Store
+
+# renv
+renv/library/
+renv/staging/
+
+# logs
+*.log
+
+# large files
+*.csv
+*.tsv
+*.txt
+*.rds
