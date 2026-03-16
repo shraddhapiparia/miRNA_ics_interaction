@@ -48,6 +48,7 @@ library(forcats)
 library(patchwork)
 library(matrixStats)
 library(scales)
+library(meta)
 ```
 
 ```{r paths}
@@ -293,12 +294,18 @@ run_interaction_scan <- function(
     tibble(
       miRNA = mir,
       n_all = nobs(fit_all),
+    
+      beta_interaction = log(inter$or),
       OR_interaction = inter$or,
       p_val_interaction = inter$p_value,
       se_interaction = inter$se,
+    
+      beta_treated = log(treated$or),
       OR_treated = treated$or,
       p_val_treated = treated$p_value,
       se_treated = treated$se,
+    
+      beta_untreated = log(untreated$or),
       OR_untreated = untreated$or,
       p_val_untreated = untreated$p_value,
       se_untreated = untreated$se
@@ -684,8 +691,22 @@ print(cra_auc$stratified_auc)
 
 ```{r shared-mirs}
 shared_hits <- inner_join(
-  cra_results |> select(miRNA, OR_interaction_cra = OR_interaction, p_interaction_cra = p_val_interaction),
-  camp_results |> select(miRNA, OR_interaction_camp = OR_interaction, p_interaction_camp = p_val_interaction),
+  cra_results |>
+    select(
+      miRNA,
+      beta_interaction_cra = beta_interaction,
+      se_interaction_cra = se_interaction,
+      OR_interaction_cra = OR_interaction,
+      p_interaction_cra = p_val_interaction
+    )|> filter(p_interaction_cra < 0.05),
+  camp_results |>
+    select(
+      miRNA,
+      beta_interaction_camp = beta_interaction,
+      se_interaction_camp = se_interaction,
+      OR_interaction_camp = OR_interaction,
+      p_interaction_camp = p_val_interaction
+    )|> filter(p_interaction_camp < 0.05),
   by = "miRNA"
 ) |>
   arrange(p_interaction_cra, p_interaction_camp)
@@ -694,26 +715,81 @@ write_csv(shared_hits, file.path(outdir, "models", "shared_miRNA_interaction_sum
 head(shared_hits)
 ```
 
-```{r}
-meta_results <- shared_hits |>
-  rowwise() |>
+```{r IVW-meta-analysis}
+meta_interaction_results <- shared_hits |>
   mutate(
-    meta = list(
-      metagen(
-        TE = c(beta_camp, beta_cra),
-        seTE = c(se_camp, se_cra),
-        studlab = c("CAMP", "CRA"),
-        sm = "OR",
-        method.tau = "DL",
-        comb.fixed = TRUE,
-        comb.random = FALSE
-      )
-    ),
-    meta_beta = meta$TE.fixed,
-    meta_se = meta$seTE.fixed,
-    meta_p = meta$pval.fixed,
-    meta_OR = exp(meta_beta)
+    w_camp = 1 / (se_interaction_camp^2),
+    w_cra  = 1 / (se_interaction_cra^2),
+
+    beta_meta = (
+      beta_interaction_camp * w_camp +
+      beta_interaction_cra  * w_cra
+    ) / (w_camp + w_cra),
+
+    se_meta = sqrt(1 / (w_camp + w_cra)),
+
+    z_meta = beta_meta / se_meta,
+    p_meta = 2 * pnorm(-abs(z_meta)),
+
+    OR_meta = exp(beta_meta),
+    lower_CI_meta = exp(beta_meta - 1.96 * se_meta),
+    upper_CI_meta = exp(beta_meta + 1.96 * se_meta)
   ) |>
-  dplyr::select(miRNA, meta_OR, meta_p)
+  arrange(p_meta)
+meta_interaction_results
 ```
+
+```{r combine-pval-meta-analysis}
+# Primary meta-analysis: inverse-variance fixed-effect
+meta_ivw <- shared_hits |>
+  mutate(
+    w_camp = 1 / (se_interaction_camp^2),
+    w_cra  = 1 / (se_interaction_cra^2),
+    beta_meta = (
+      beta_interaction_camp * w_camp +
+      beta_interaction_cra  * w_cra
+    ) / (w_camp + w_cra),
+    se_meta = sqrt(1 / (w_camp + w_cra)),
+    z_meta = beta_meta / se_meta,
+    p_meta = 2 * pnorm(-abs(z_meta)),
+    OR_meta = exp(beta_meta),
+    lower_CI_meta = exp(beta_meta - 1.96 * se_meta),
+    upper_CI_meta = exp(beta_meta + 1.96 * se_meta)
+  ) |>
+  arrange(p_meta)
+
+# Sensitivity checks: p-value combination methods
+
+meta_pval <- shared_hits |>
+  mutate(
+    fisher_stat = -2 * (log(p_interaction_camp) + log(p_interaction_cra)),
+    fisher_p = pchisq(fisher_stat, df = 4, lower.tail = FALSE),
+
+    z_camp_unweighted = qnorm(1 - p_interaction_camp / 2),
+    z_cra_unweighted  = qnorm(1 - p_interaction_cra / 2),
+    z_stouffer = (z_camp_unweighted + z_cra_unweighted) / sqrt(2),
+    stouffer_p = 2 * pnorm(-abs(z_stouffer)),
+
+    z_camp_weighted = sign(beta_interaction_camp) * qnorm(1 - p_interaction_camp / 2),
+    z_cra_weighted  = sign(beta_interaction_cra)  * qnorm(1 - p_interaction_cra / 2),
+    w_camp_st = 1 / se_interaction_camp,
+    w_cra_st  = 1 / se_interaction_cra,
+    z_stouffer_weighted = (
+      w_camp_st * z_camp_weighted +
+      w_cra_st  * z_cra_weighted
+    ) / sqrt(w_camp_st^2 + w_cra_st^2),
+    stouffer_weighted_p = 2 * pnorm(-abs(z_stouffer_weighted))
+  ) |>
+  dplyr::select(
+    miRNA,
+    fisher_p,
+    stouffer_p,
+    stouffer_weighted_p
+  )
+meta_results_all <- meta_ivw |>
+  left_join(meta_pval, by = "miRNA")
+
+meta_results_all
+```
+
 
