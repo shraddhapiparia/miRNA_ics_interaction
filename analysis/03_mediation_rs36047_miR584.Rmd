@@ -1,0 +1,531 @@
+---
+title: "rs36047 -> miR-584-5p -> exacerbation mediation"
+output:
+  html_document:
+    toc: true
+    toc_float: true
+    code_folding: hide
+params:
+  cra_counts: "../data/CRA/2022-08-16_CRA_1159_exceRpt_miRNA_ReadCountscopy.csv"
+  cra_pheno: "../data/CRA/PhenotypeInfo.csv"
+  cra_link: "../data/CRA/cra_shortened_phenotype_files10-11.csv"
+  cra_snp: "../data/CRA/gacrs_mir584_cis.raw"
+  cra_pcs: "../data/CRA/gacrs_pcs.txt"
+  camp_counts: "../data/CAMP/CAMP.492.COUNT.csv"
+  camp_pheno: "../data/CAMP/camp_pheno_2022-08-04.tsv"
+  camp_link: "../data/CAMP/shortened_phenotype_files_ver5.csv"
+  camp_snp: "../data/CAMP/camp_mir584_cis.raw"
+  camp_pcs: "../data/CAMP/camp_pcs.txt"
+  outdir: "../results"
+  highlight_mir: "hsa-miR-584-5p"
+  min_count: 5
+  min_prop_samples: 0.5
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE, warning = FALSE, message = FALSE)
+options(stringsAsFactors = FALSE)
+```
+
+```{r packages}
+library(dplyr)
+library(ggplot2)
+library(preprocessCore)
+library(broom)
+library(mediation)
+library(stringr)
+```
+
+## Output folders
+
+```{r output-folders}
+outdir <- params$outdir
+
+med_tables_dir <- file.path(outdir, "mediation", "tables")
+med_plots_dir  <- file.path(outdir, "mediation", "plots")
+
+dir.create(med_tables_dir, recursive = TRUE, showWarnings = FALSE)
+dir.create(med_plots_dir, recursive = TRUE, showWarnings = FALSE)
+```
+
+## Helper: quantile-normalize one miRNA
+
+```{r helper-functions}
+extract_miR584_quantile <- function(count_df, mir_col, mir_name = "hsa-miR-584-5p",
+                                    min_count = 5, min_prop = 0.5) {
+  keep <- rowSums(count_df[, -1] > min_count) >= (ncol(count_df[, -1]) * min_prop)
+  miRNAs <- count_df[keep, ]
+
+  mir_mat <- as.matrix(miRNAs[, -1])
+  rownames(mir_mat) <- miRNAs[[mir_col]]
+
+  mir_norm <- normalize.quantiles(mir_mat)
+  rownames(mir_norm) <- rownames(mir_mat)
+  colnames(mir_norm) <- colnames(mir_mat)
+
+  out <- as.data.frame(mir_norm[mir_name, ])
+  out$svid <- rownames(out)
+  rownames(out) <- NULL
+  colnames(out)[1] <- "miRNA584"
+
+  out
+}
+```
+
+# CAMP
+
+## CAMP input files
+
+```{r camp-input}
+camp_snp   <- read.table(params$camp_snp, header = TRUE)
+camp_link  <- read.csv(params$camp_link)
+camp_counts <- read.csv(params$camp_counts)
+camp_pheno <- read.table(params$camp_pheno, sep = "\t", header = TRUE)
+camp_pcs   <- read.table(params$camp_pcs, header = TRUE)
+```
+
+## CAMP miRNA normalization
+
+```{r camp-mirna}
+camp_miR584 <- extract_miR584_quantile(
+  count_df   = camp_counts,
+  mir_col    = "MIRNA",
+  mir_name   = params$highlight_mir,
+  min_count  = params$min_count,
+  min_prop   = params$min_prop_samples
+)
+```
+
+## CAMP prepare and merge
+
+```{r camp-merge}
+camp_pheno2 <- camp_pheno %>%
+  filter(TG != 2) %>%
+  mutate(across(c(camp, U_PEDIGREEID, S_SUBJECTID, TG), as.character))
+
+camp_link2 <- camp_link %>%
+  mutate(across(c(CAMP_ID, row.names.CAMP_492_COUNT.Trans.), as.character))
+
+camp_miR584 <- camp_miR584 %>%
+  mutate(svid = as.character(svid))
+
+camp_snp2 <- camp_snp %>%
+  rename(pedid = FID, subid = IID) %>%
+  mutate(across(c(pedid, subid), as.character))
+
+camp_map <- camp_pheno2 %>%
+  dplyr::rename(
+    campid = camp,
+    pedid = U_PEDIGREEID,
+    subid = S_SUBJECTID
+  ) %>%
+  dplyr::select(campid, pedid, subid, TG, AGE, SEX, EDHOS_cum_Y1)
+
+camp_link_std <- camp_link2 %>%
+  rename(
+    campid = CAMP_ID,
+    svid = row.names.CAMP_492_COUNT.Trans.
+  )
+
+camp_pcs$subid <- as.character(camp_pcs$S_SUBJECTID)
+
+camp_df <- camp_link_std %>%
+  left_join(camp_map, by = "campid") %>%
+  inner_join(camp_pcs, by = "subid") %>%
+  inner_join(camp_snp2, by = "subid") %>%
+  inner_join(camp_miR584, by = "svid")
+
+camp_df$treatment_grp <- ifelse(camp_df$TG == 1, "ICS", "Placebo")
+camp_df$treatment_grp <- relevel(factor(camp_df$treatment_grp), ref = "Placebo")
+
+camp_df$miRNA584_norm <- qnorm((rank(camp_df$miRNA584) - 0.5) / length(camp_df$miRNA584))
+```
+
+## CAMP define outcome and SNP
+
+
+```{r camp-outcome}
+lead_snp_camp <- "X5.149061758.C.T_C"   # rs36047
+camp_df <- camp_df |>
+  filter(!is.na(EDHOS_cum_Y1)) |>
+  mutate(
+    outcome = factor(ifelse(EDHOS_cum_Y1 < 1, "low", "high")),
+    outcome = relevel(outcome, ref = "low"),
+    treatment = factor(TG),
+    treatment = relevel(treatment, ref = "3"),
+    SEX.x = factor(SEX.x)
+  )
+stopifnot(lead_snp_camp %in% names(camp_df))
+```
+
+## CAMP SNP -> exacerbation check
+
+```{r camp-snp-to-outcome}
+camp_snp_outcome <- glm(
+  outcome ~ `X5.149061758.C.T_C` + AGE.x + SEX.x +
+    PC1 + PC2 + PC3 + PC4 + PC5 + PC6 + PC7 + PC8 + PC9 + PC10,
+  data = camp_df,
+  family = binomial()
+)
+
+summary(camp_snp_outcome)
+broom::tidy(camp_snp_outcome, exponentiate = TRUE, conf.int = TRUE)
+```
+
+## CAMP SNP -> miRNA mediator model
+
+```{r camp-mediator-model}
+camp_med_fit <- lm(
+  miRNA584_norm ~ `X5.149061758.C.T_C` + AGE.x + SEX.x + treatment_grp +
+    PC1 + PC2 + PC3 + PC4 + PC5 + PC6 + PC7 + PC8 + PC9 + PC10,
+  data = camp_df
+)
+
+summary(camp_med_fit)
+broom::tidy(camp_med_fit)
+```
+
+## CAMP miRNA -> exacerbation outcome model with interaction
+
+```{r camp-outcome-model-interaction}
+camp_out_fit_int <- glm(
+  outcome ~ `X5.149061758.C.T_C` + miRNA584_norm * treatment_grp +
+    AGE.x + SEX.x +
+    PC1 + PC2 + PC3 + PC4 + PC5 + PC6 + PC7 + PC8 + PC9 + PC10,
+  data = camp_df,
+  family = binomial()
+)
+
+summary(camp_out_fit_int)
+broom::tidy(camp_out_fit_int, exponentiate = TRUE, conf.int = TRUE)
+```
+
+## CAMP pooled mediation without interaction
+
+
+```{r camp-mediation-pooled}
+camp_out_fit_pooled <- glm(
+  outcome ~ `X5.149061758.C.T_C` + miRNA584_norm +
+    AGE.x + SEX.x + treatment_grp +
+    PC1 + PC2 + PC3 + PC4 + PC5 + PC6 + PC7 + PC8 + PC9 + PC10,
+  data = camp_df,
+  family = binomial()
+)
+
+camp_med_pooled <- mediate(
+  model.m = camp_med_fit,
+  model.y = camp_out_fit_pooled,
+  treat = "X5.149061758.C.T_C",
+  mediator = "miRNA584_norm",
+  boot = TRUE,
+  sims = 1000
+)
+
+summary(camp_med_pooled)
+```
+
+## CAMP stratified mediation: ICS only
+
+```{r camp-ics-only}
+camp_df_ics <- camp_df %>% filter(treatment_grp == "ICS")
+
+camp_med_fit_ics <- lm(
+  miRNA584_norm ~ `X5.149061758.C.T_C` + AGE.x + SEX.x +
+    PC1 + PC2 + PC3 + PC4 + PC5 + PC6 + PC7 + PC8 + PC9 + PC10,
+  data = camp_df_ics
+)
+
+camp_out_fit_ics <- glm(
+  outcome ~ `X5.149061758.C.T_C` + miRNA584_norm +
+    AGE.x + SEX.x +
+    PC1 + PC2 + PC3 + PC4 + PC5 + PC6 + PC7 + PC8 + PC9 + PC10,
+  data = camp_df_ics,
+  family = binomial()
+)
+
+camp_med_ics <- mediate(
+  model.m = camp_med_fit_ics,
+  model.y = camp_out_fit_ics,
+  treat = "X5.149061758.C.T_C",
+  mediator = "miRNA584_norm",
+  boot = TRUE,
+  sims = 1000
+)
+
+summary(camp_med_ics)
+```
+
+## CAMP stratified mediation: Placebo only
+
+```{r camp-placebo-only}
+camp_df_placebo <- camp_df %>% filter(treatment_grp == "Placebo")
+
+camp_med_fit_placebo <- lm(
+  miRNA584_norm ~ `X5.149061758.C.T_C` + AGE.x + SEX.x +
+    PC1 + PC2 + PC3 + PC4 + PC5 + PC6 + PC7 + PC8 + PC9 + PC10,
+  data = camp_df_placebo
+)
+
+camp_out_fit_placebo <- glm(
+  outcome ~ `X5.149061758.C.T_C` + miRNA584_norm +
+    AGE.x + SEX.x +
+    PC1 + PC2 + PC3 + PC4 + PC5 + PC6 + PC7 + PC8 + PC9 + PC10,
+  data = camp_df_placebo,
+  family = binomial()
+)
+
+camp_med_placebo <- mediate(
+  model.m = camp_med_fit_placebo,
+  model.y = camp_out_fit_placebo,
+  treat = "X5.149061758.C.T_C",
+  mediator = "miRNA584_norm",
+  boot = TRUE,
+  sims = 1000
+)
+
+summary(camp_med_placebo)
+```
+
+# CRA / GACRS
+
+## CRA input files
+
+```{r cra-input}
+cra_snp   <- read.table(params$cra_snp, header = TRUE)
+cra_link  <- read.csv(params$cra_link)
+cra_counts <- read.csv(params$cra_counts)
+cra_pheno <- read.table(params$cra_pheno, sep = ",", header = TRUE)
+cra_pcs   <- read.table(params$cra_pcs, header = TRUE)
+```
+
+## CRA miRNA normalization
+
+```{r cra-mirna}
+cra_miR584 <- extract_miR584_quantile(
+  count_df   = cra_counts,
+  mir_col    = "X",
+  mir_name   = params$highlight_mir,
+  min_count  = params$min_count,
+  min_prop   = params$min_prop_samples
+)
+```
+
+## CRA prepare and merge
+
+```{r cra-merge}
+cra_pheno2 <- cra_pheno %>%
+  mutate(across(c(studyid, S_SUBJECTID, Inhaled_Steroids), as.character))
+
+cra_link2 <- cra_link %>%
+  mutate(across(c(ST.ID, sample.id), as.character))
+
+cra_link2$sample.id <- gsub("\\-", ".", cra_link2$sample.id)
+
+cra_miR584 <- cra_miR584 %>%
+  mutate(svid = as.character(svid))
+
+cra_snp2 <- cra_snp %>%
+  rename(pedid = FID, subid = IID) %>%
+  mutate(across(c(pedid, subid), as.character)) %>%
+  distinct(subid, .keep_all = TRUE)
+
+cra_map <- cra_pheno2 %>%
+  dplyr::rename(
+    subid = S_SUBJECTID,
+    TG = Inhaled_Steroids
+  ) %>%
+  dplyr::select(studyid, subid, TG, Hospitalized_Asthma_Last_Yr)
+
+cra_link_std <- cra_link2 %>%
+  rename(
+    subid = ST.ID,
+    svid = sample.id
+  ) %>%
+  distinct(subid, svid, .keep_all = TRUE)
+
+cra_pcs$subid <- as.character(cra_pcs$IID)
+
+cra_df <- cra_link_std %>%
+  left_join(cra_map, by = "subid") %>%
+  inner_join(cra_snp2, by = "subid") %>%
+  inner_join(cra_pcs, by = "subid") %>%
+  inner_join(cra_miR584, by = "svid")
+
+cra_df$treatment_grp <- ifelse(cra_df$TG == 2, "ICS", "Placebo")
+cra_df$treatment_grp <- relevel(factor(cra_df$treatment_grp), ref = "Placebo")
+
+cra_df$miRNA584_norm <- qnorm((rank(cra_df$miRNA584) - 0.5) / length(cra_df$miRNA584))
+```
+
+## CRA define outcome and SNP
+
+```{r cra-outcome}
+lead_snp_cra <- "X5.149061758.C.T_C"
+
+cra_df <- cra_df |>
+  filter(!is.na(Hospitalized_Asthma_Last_Yr)) |>
+  mutate(
+    outcome = factor(Hospitalized_Asthma_Last_Yr),
+    treatment = factor(TG),
+    treatment = relevel(treatment, ref = "1"),
+    gender.x = factor(gender)
+  )
+
+stopifnot(lead_snp_cra %in% names(cra_df))
+```
+
+## CRA SNP -> exacerbation check
+
+```{r cra-snp-to-outcome}
+cra_snp_outcome <- glm(
+  outcome ~ `X5.149061758.C.T_C` + age + gender + 
+    PC1 + PC2 + PC3 + PC4 + PC5 + PC6 + PC7 + PC8 + PC9 + PC10,
+  data = cra_df,
+  family = binomial()
+)
+
+summary(cra_snp_outcome)
+broom::tidy(cra_snp_outcome, exponentiate = TRUE, conf.int = TRUE)
+```
+
+## CRA SNP -> miRNA mediator model
+
+```{r cra-mediator-model}
+cra_med_fit <- lm(
+  miRNA584_norm ~ `X5.149061758.C.T_C` + age + gender + PC1 + PC2 + PC3 + PC4 + PC5 + PC6 + PC7 + PC8 + PC9 + PC10 + treatment_grp,
+  data = cra_df
+)
+
+summary(cra_med_fit)
+broom::tidy(cra_med_fit)
+```
+
+## CRA miRNA -> exacerbation outcome model with interaction
+
+```{r cra-outcome-model-interaction}
+cra_out_fit_int <- glm(
+  outcome ~ `X5.149061758.C.T_C` + miRNA584_norm * treatment_grp + age + gender + PC1 + PC2 + PC3 + PC4 + PC5 + PC6 + PC7 + PC8 + PC9 + PC10,
+  data = cra_df,
+  family = binomial()
+)
+
+summary(cra_out_fit_int)
+broom::tidy(cra_out_fit_int, exponentiate = TRUE, conf.int = TRUE)
+```
+
+## CRA pooled mediation without interaction
+
+```{r cra-mediation-pooled}
+cra_out_fit_pooled <- glm(
+  outcome ~ `X5.149061758.C.T_C` + miRNA584_norm + treatment_grp + age + gender + PC1 + PC2 + PC3 + PC4 + PC5 + PC6 + PC7 + PC8 + PC9 + PC10,
+  data = cra_df,
+  family = binomial()
+)
+
+cra_med_pooled <- mediate(
+  model.m = cra_med_fit,
+  model.y = cra_out_fit_pooled,
+  treat = "X5.149061758.C.T_C",
+  mediator = "miRNA584_norm",
+  boot = TRUE,
+  sims = 1000
+)
+
+summary(cra_med_pooled)
+```
+
+## CRA stratified mediation: ICS only
+
+```{r cra-ics-only}
+cra_df_ics <- cra_df %>% filter(treatment_grp == "ICS")
+
+cra_med_fit_ics <- lm(
+  miRNA584_norm ~ `X5.149061758.C.T_C` + age + gender + PC1 + PC2 + PC3 + PC4 + PC5 + PC6 + PC7 + PC8 + PC9 + PC10,
+  data = cra_df_ics
+)
+
+cra_out_fit_ics <- glm(
+  outcome ~ `X5.149061758.C.T_C` + miRNA584_norm + age + gender + PC1 + PC2 + PC3 + PC4 + PC5 + PC6 + PC7 + PC8 + PC9 + PC10,
+  data = cra_df_ics,
+  family = binomial()
+)
+
+cra_med_ics <- mediate(
+  model.m = cra_med_fit_ics,
+  model.y = cra_out_fit_ics,
+  treat = "X5.149061758.C.T_C",
+  mediator = "miRNA584_norm",
+  boot = TRUE,
+  sims = 1000
+)
+
+summary(cra_med_ics)
+```
+
+## CRA stratified mediation: Placebo only
+
+```{r cra-placebo-only}
+cra_df_placebo <- cra_df %>% filter(treatment_grp == "Placebo")
+
+cra_med_fit_placebo <- lm(
+  miRNA584_norm ~ `X5.149061758.C.T_C` + age + gender + PC1 + PC2 + PC3 + PC4 + PC5 + PC6 + PC7 + PC8 + PC9 + PC10,
+  data = cra_df_placebo
+)
+
+cra_out_fit_placebo <- glm(
+  outcome ~ `X5.149061758.C.T_C` + miRNA584_norm + age + gender + PC1 + PC2 + PC3 + PC4 + PC5 + PC6 + PC7 + PC8 + PC9 + PC10,
+  data = cra_df_placebo,
+  family = binomial()
+)
+
+cra_med_placebo <- mediate(
+  model.m = cra_med_fit_placebo,
+  model.y = cra_out_fit_placebo,
+  treat = "X5.149061758.C.T_C",
+  mediator = "miRNA584_norm",
+  boot = TRUE,
+  sims = 1000
+)
+
+summary(cra_med_placebo)
+```
+
+# Save key outputs
+
+```{r save-key-outputs}
+write.csv(broom::tidy(camp_snp_outcome, exponentiate = TRUE, conf.int = TRUE),
+          file.path(med_tables_dir, "CAMP_rs36047_snp_to_exacerbation.csv"),
+          row.names = FALSE)
+
+write.csv(broom::tidy(camp_med_fit),
+          file.path(med_tables_dir, "CAMP_rs36047_mediator_model.csv"),
+          row.names = FALSE)
+
+write.csv(broom::tidy(camp_out_fit_int, exponentiate = TRUE, conf.int = TRUE),
+          file.path(med_tables_dir, "CAMP_rs36047_outcome_model_interaction.csv"),
+          row.names = FALSE)
+
+write.csv(broom::tidy(cra_snp_outcome, exponentiate = TRUE, conf.int = TRUE),
+          file.path(med_tables_dir, "CRA_rs36047_snp_to_exacerbation.csv"),
+          row.names = FALSE)
+
+write.csv(broom::tidy(cra_med_fit),
+          file.path(med_tables_dir, "CRA_rs36047_mediator_model.csv"),
+          row.names = FALSE)
+
+write.csv(broom::tidy(cra_out_fit_int, exponentiate = TRUE, conf.int = TRUE),
+          file.path(med_tables_dir, "CRA_rs36047_outcome_model_interaction.csv"),
+          row.names = FALSE)
+```
+
+# Summary objects from mediation output
+
+```{r mediation-summary-objects}
+camp_med_ics_sum <- summary(camp_med_ics)
+camp_med_placebo_sum <- summary(camp_med_placebo)
+cra_med_ics_sum <- summary(cra_med_ics)
+cra_med_placebo_sum <- summary(cra_med_placebo)
+```
+
+
+

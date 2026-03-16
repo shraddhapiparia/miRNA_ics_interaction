@@ -27,13 +27,23 @@ library(broom)
 library(preprocessCore)
 library(ggplot2)
 library(stringr)
+library(tidyr)
 ```
 
 ```{r paths}
 outdir <- params$outdir
+
 dir.create(outdir, recursive = TRUE, showWarnings = FALSE)
-dir.create(file.path(outdir, "QTL"), recursive = TRUE, showWarnings = FALSE)
-dir.create(file.path(outdir, "QTL_followup"), recursive = TRUE, showWarnings = FALSE)
+
+dirs <- list(
+  qtl_tables_dir      = file.path(outdir, "qtl", "tables"),
+  qtl_plots_dir       = file.path(outdir, "qtl", "plots"),
+  qtl_followup_dir    = file.path(outdir, "qtl_followup", "tables"),
+  qtl_followup_plots_dir = file.path(outdir, "qtl_followup", "plots"),
+  meta_tables_dir     = file.path(outdir, "qtl_meta", "tables")
+)
+
+invisible(lapply(dirs, dir.create, recursive = TRUE, showWarnings = FALSE))
 ```
 
 ## CAMP input files
@@ -237,11 +247,23 @@ head(results_int, 20)
 ## CAMP simple regional plot
 
 ```{r camp-regional-plot}
+results_base$pos <- as.numeric(sub("X5\\.(\\d+)\\..*", "\\1", results_base$SNP))
+p_camp_base <- ggplot(results_base, aes(pos, -log10(p_snp))) +
+  geom_point() +
+  theme_bw() +
+  labs(x = "chr5 position", y = "-log10(p)", title = "CAMP cis-miR-QTL base model")
+
+ggsave(file.path(dirs["qtl_plots_dir"], "CAMP_base_plot.png"),
+       p_camp_base, width = 7, height = 5, dpi = 300)
+
+p_camp_base
+```
+```{r}
 camp_plot_df <- results_int
 camp_plot_df$index <- 1:nrow(camp_plot_df)
 camp_plot_df$logp_int <- -log10(camp_plot_df$p_int)
 
-ggplot(camp_plot_df, aes(x = index, y = logp_int)) +
+p_camp_int <- ggplot(camp_plot_df, aes(x = index, y = logp_int)) +
   geom_point(alpha = 0.7) +
   labs(
     title = "CAMP: MIR584 cis-mirQTL interaction scan",
@@ -249,25 +271,22 @@ ggplot(camp_plot_df, aes(x = index, y = logp_int)) +
     y = "-log10(p interaction)"
   ) +
   theme_bw()
-```
-```{r}
-results_base$pos <- as.numeric(sub("X5\\.(\\d+)\\..*", "\\1", results_base$SNP))
 
-ggplot(results_base, aes(pos, -log10(p_snp))) +
-  geom_point() +
-  theme_bw() +
-  labs(x="chr5 position", y="-log10(p)")
+ggsave(file.path(dirs["qtl_plots_dir"], "CAMP_interaction_regional_plot.png"),
+       p_camp_int, width = 7, height = 5, dpi = 300)
+
+p_camp_int
 ```
 
 ## CAMP save results
 
 ```{r camp-save-results}
 write.csv(results_base,
-          "../results/QTL/MIR584_cis_mirQTL_base_model_CAMP.csv",
+          file.path(dirs["qtl_tables_dir"], "CAMP_miR584_cis_mirQTL_base_model.csv"),
           row.names = FALSE)
 
 write.csv(results_int,
-          "../results/QTL/MIR584_cis_mirQTL_interaction_model_CAMP.csv",
+          file.path(dirs["qtl_tables_dir"], "CAMP_miR584_cis_mirQTL_interaction_model.csv"),
           row.names = FALSE)
 ```
 
@@ -278,6 +297,7 @@ SNP_cra   <- read.table("../data/CRA/gacrs_mir584_cis.raw", header = TRUE)
 covar_cra <- read.csv("../data/CRA/cra_shortened_phenotype_files10-11.csv")
 miRs_cra  <- read.csv("../data/CRA/2022-08-16_CRA_1159_exceRpt_miRNA_ReadCountscopy.csv", sep = ",", header = TRUE)
 mapping_cra <- read.table("../data/CRA/PhenotypeInfo.csv", sep = ",", header = TRUE)
+cra_pcs   <- read.table("../data/CRA/gacrs_pcs.txt", header = TRUE)
 ```
 
 ## CRA miRNA normalization
@@ -301,16 +321,13 @@ colnames(miR584_cra)[1] <- "miRNA584"
 ## CRA prepare phenotype and covariate data
 
 ```{r cra-prepare-phenotype}
-mapping_cra <- mapping_cra %>%
-  mutate(across(c(studyid, S_SUBJECTID, Inhaled_Steroids), as.character))
+mapping_cra <- mapping_cra %>% mutate(across(c(studyid, S_SUBJECTID, Inhaled_Steroids), as.character))
 
-covar_cra <- covar_cra %>%
-  mutate(across(c(ST.ID, sample.id), as.character))
+covar_cra <- covar_cra %>% mutate(across(c(ST.ID, sample.id), as.character))
 
 covar_cra$sample.id <- gsub("\\-", ".", covar_cra$sample.id)
 
-miR584_cra <- miR584_cra %>%
-  mutate(svid = as.character(svid))
+miR584_cra <- miR584_cra %>% mutate(svid = as.character(svid))
 ```
 
 ## CRA standardize IDs
@@ -345,7 +362,10 @@ miR584_cra      <- miR584_cra %>% distinct(svid, .keep_all = TRUE)
 covar_map_cra <- covar_std_cra %>%
   left_join(mapping_std_cra, by = "subid")
 
+cra_pcs$subid <- as.character(cra_pcs$IID)
+
 df_cra <- covar_map_cra %>%
+  inner_join(cra_pcs, by = "subid") %>%
   inner_join(snp2_cra, by = "subid") %>%
   inner_join(miR584_cra, by = "svid")
 
@@ -381,7 +401,7 @@ for (snp in snp_cols_cra) {
   model_formula <- as.formula(
     paste0(
       "miRNA584_norm ~ ", snp,
-      " + age + gender"
+      " + age + gender + PC1 + PC2 + PC3 + PC4 + PC5 + PC6 + PC7 + PC8 + PC9 + PC10"
     )
   )
 
@@ -420,7 +440,7 @@ for (snp in snp_cols_cra) {
       "miRNA584_norm ~ ", snp,
       " + treatment_grp + ",
       snp, ":treatment_grp",
-      " + age + gender"
+      " + age + gender + PC1 + PC2 + PC3 + PC4 + PC5 + PC6 + PC7 + PC8 + PC9 + PC10"
     )
   )
 
@@ -465,11 +485,24 @@ head(results_int_cra, 20)
 ## CRA simple regional plot
 
 ```{r cra-regional-plot}
+results_base_cra$pos <- as.numeric(sub("X5\\.(\\d+)\\..*", "\\1", results_base_cra$SNP))
+p_cra_base <- ggplot(results_base_cra, aes(pos, -log10(p_snp))) +
+  geom_point() +
+  theme_bw() +
+  labs(x = "chr5 position", y = "-log10(p)", title = "CRA cis-miR-QTL base model")
+
+ggsave(file.path(dirs["qtl_plots_dir"], "CRA_base_plot.png"),
+       p_cra_base, width = 7, height = 5, dpi = 300)
+
+p_cra_base
+```
+
+```{r}
 cra_plot_df <- results_int_cra
 cra_plot_df$index <- 1:nrow(cra_plot_df)
 cra_plot_df$logp_int <- -log10(cra_plot_df$p_int)
 
-ggplot(cra_plot_df, aes(x = index, y = logp_int)) +
+p_cra_int <- ggplot(cra_plot_df, aes(x = index, y = logp_int)) +
   geom_point(alpha = 0.7) +
   labs(
     title = "CRA: MIR584 cis-mirQTL interaction scan",
@@ -477,25 +510,21 @@ ggplot(cra_plot_df, aes(x = index, y = logp_int)) +
     y = "-log10(p interaction)"
   ) +
   theme_bw()
-```
 
-```{r}
-results_base_cra$pos <- as.numeric(sub("X5\\.(\\d+)\\..*", "\\1", results_base_cra$SNP))
+ggsave(file.path(dirs["qtl_plots_dir"], "CRA_interaction_regional_plot.png"),
+       p_cra_int, width = 7, height = 5, dpi = 300)
 
-ggplot(results_base_cra, aes(pos, -log10(p_snp))) +
-  geom_point() +
-  theme_bw() +
-  labs(x="chr5 position", y="-log10(p)")
+p_cra_int
 ```
 ## CRA save results
 
 ```{r cra-save-results}
 write.csv(results_base_cra,
-          "../results/QTL/MIR584_cis_mirQTL_base_model_CRA.csv",
+          file.path(qtl_tables_dir, "CRA_miR584_cis_mirQTL_base_model.csv"),
           row.names = FALSE)
 
 write.csv(results_int_cra,
-          "../results/QTL/MIR584_cis_mirQTL_interaction_model_CRA.csv",
+          file.path(qtl_tables_dir, "CRA_miR584_cis_mirQTL_interaction_model.csv"),
           row.names = FALSE)
 ```
 
@@ -551,41 +580,30 @@ top_cra_pos <- results_base_cra %>%
   )
 
 overlap_snps = inner_join(
-  top_camp_pos %>% select(SNP_camp = SNP, chr, pos, p_camp = p_snp),
-  top_cra_pos  %>% select(SNP_cra  = SNP, chr, pos, p_cra  = p_snp),
+  top_camp_pos %>% dplyr::select(SNP_camp = SNP, chr, pos, p_camp = p_snp),
+  top_cra_pos  %>% dplyr::select(SNP_cra  = SNP, chr, pos, p_cra  = p_snp),
   by = c("chr", "pos")
 )
+overlap_snps
 ```
 
 
 ```{r}
 camp_hits <- results_base %>%
   filter(pos %in% overlap_snps$pos) %>%
-  select(SNP, pos, beta_snp, p_snp)
+  dplyr::select(SNP, pos, beta_snp, p_snp, p_snp_fdr)
 
 cra_hits <- results_base_cra %>%
   filter(pos %in% overlap_snps$pos) %>%
-  select(SNP, pos, beta_snp, p_snp)
+  dplyr::select(SNP, pos, beta_snp, p_snp, p_snp_fdr)
 
-inner_join(
+combined_df = inner_join(
   camp_hits,
   cra_hits,
   by="pos",
   suffix=c("_camp","_cra")
 )
-```
-```{r}
-lead_pos <- c(149061758, 149031357, 149121003)
-camp_leads <- results_base %>%
-  filter(pos %in% lead_pos) %>%
-  arrange(match(pos, lead_pos))
-
-cra_leads <- results_base_cra %>%
-  filter(pos %in% lead_pos) %>%
-  arrange(match(pos, lead_pos))
-
-camp_leads
-cra_leads
+combined_df
 ```
 
 ```{r}
@@ -602,12 +620,12 @@ results_int_cra <- results_int_cra %>%
   )
 
 camp_int_leads <- results_int %>%
-  filter(pos %in% lead_pos) %>%
-  arrange(match(pos, lead_pos))
+  filter(pos %in% overlap_snps$pos) %>%
+  arrange(match(pos, overlap_snps$pos))
 
 cra_int_leads <- results_int_cra %>%
-  filter(pos %in% lead_pos) %>%
-  arrange(match(pos, lead_pos))
+  filter(pos %in% overlap_snps$pos) %>%
+  arrange(match(pos, overlap_snps$pos))
 
 camp_int_leads
 cra_int_leads
@@ -615,66 +633,70 @@ cra_int_leads
 
 ```{r CAMP_plots_miRvsgenotype}
 
-for (snp in camp_leads$SNP) {
+camp_long <- df %>%
+  dplyr::select(miRNA584_norm, treatment_grp, all_of(camp_leads$SNP)) %>%
+  pivot_longer(
+    cols = all_of(camp_leads$SNP),
+    names_to = "SNP",
+    values_to = "Genotype"
+  )
 
-  p <- ggplot(df, aes_string(x = paste0("factor(`", snp, "`)"), y = "miRNA584_norm")) +
-    geom_boxplot() +
-    theme_bw() +
-    labs(
-      title = paste("CAMP:", snp),
-      x = "Genotype",
-      y = "miR-584-5p expression"
-    )
-
-  print(p)
-}
+ggplot(camp_long, aes(x = factor(Genotype), y = miRNA584_norm)) +
+  geom_boxplot() +
+  facet_wrap(~SNP, scales = "free_x") +
+  theme_bw() +
+  labs(
+    title = "CAMP: miR-584-5p vs genotype",
+    x = "Genotype",
+    y = "miR-584-5p expression"
+  )
 
 ```
 ```{r CAMP_plots_miRvsgenotype_ICS}
-for (snp in camp_leads$SNP) {
 
-  p <- ggplot(df, aes_string(x = paste0("factor(`", snp, "`)"), y = "miRNA584_norm", color = "treatment_grp")) +
-    geom_boxplot() +
-    theme_bw() +
-    labs(
-      title = paste("CAMP:", snp, "by ICS"),
-      x = "Genotype",
-      y = "miR-584-5p expression"
-    )
-
-  print(p)
-}
+ggplot(camp_long, aes(x = factor(Genotype), y = miRNA584_norm, color = treatment_grp)) +
+  geom_boxplot() +
+  facet_wrap(~SNP, scales = "free_x") +
+  theme_bw() +
+  labs(
+    title = "CAMP: miR-584-5p vs genotype by ICS",
+    x = "Genotype",
+    y = "miR-584-5p expression",
+    color = "ICS group"
+  )
 ```
 
 ```{r CRA_plots_miRvsgenotype}
-for (snp in cra_leads$SNP) {
+cra_long <- df_cra %>%
+  dplyr::select(miRNA584_norm, TG, all_of(cra_leads$SNP)) %>%
+  pivot_longer(
+    cols = all_of(cra_leads$SNP),
+    names_to = "SNP",
+    values_to = "Genotype"
+  )
 
-  p <- ggplot(df_cra, aes_string(x = paste0("factor(`", snp, "`)"), y = "miRNA584_norm")) +
-    geom_boxplot() +
-    theme_bw() +
-    labs(
-      title = paste("CRA:", snp),
-      x = "Genotype",
-      y = "miR-584-5p expression"
-    )
-
-  print(p)
-}
+ggplot(cra_long, aes(x = factor(Genotype), y = miRNA584_norm)) +
+  geom_boxplot() +
+  facet_wrap(~SNP, scales = "free_x") +
+  theme_bw() +
+  labs(
+    title = "CRA: miR-584-5p vs genotype",
+    x = "Genotype",
+    y = "miR-584-5p expression"
+  )
 ```
 ```{r CRA_plots_miRvsgenotype_ICS}
-for (snp in cra_leads$SNP) {
 
-  p <- ggplot(df_cra, aes_string(x = paste0("factor(`", snp, "`)"), y = "miRNA584_norm", color = "treatment_grp")) +
-    geom_boxplot() +
-    theme_bw() +
-    labs(
-      title = paste("CRA:", snp, "by ICS"),
-      x = "Genotype",
-      y = "miR-584-5p expression"
-    )
-
-  print(p)
-}
+ggplot(camp_long, aes(x = factor(Genotype), y = miRNA584_norm, color = treatment_grp)) +
+  geom_boxplot() +
+  facet_wrap(~SNP, scales = "free_x") +
+  theme_bw() +
+  labs(
+    title = "CAMP: miR-584-5p vs genotype by ICS",
+    x = "Genotype",
+    y = "miR-584-5p expression",
+    color = "ICS group"
+  )
 ```
 ```{r CAMP_paiwise}
 camp_snps <- camp_leads$SNP
@@ -759,7 +781,7 @@ for (pair in pairs_cra) {
   model_formula <- as.formula(
     paste0(
       "miRNA584_norm ~ ", snp1_bt, " + ", snp2_bt,
-      " + age + gender"
+      " + age + gender + PC1 + PC2 + PC3 + PC4 + PC5 + PC6 + PC7 + PC8 + PC9 + PC10"
     )
   )
 
@@ -794,7 +816,7 @@ fit3_cra <- lm(
   as.formula(
     paste0(
       "miRNA584_norm ~ ", s1, " + ", s2, " + ", s3,
-      " + age + gender"
+      " + age + gender + PC1 + PC2 + PC3 + PC4 + PC5 + PC6 + PC7 + PC8 + PC9 + PC10"
     )
   ),
   data = df_cra
@@ -807,10 +829,10 @@ broom::tidy(fit3_cra)
 # Merge cohorts by genomic position
 replicated_hits <- inner_join(
   camp_int_leads %>%
-    select(SNP_camp = SNP,chr, pos, beta_int_camp = beta_snp, p_int_camp = p_snp),
+    dplyr::select(SNP_camp = SNP,chr, pos, beta_int_camp = beta_snp, p_int_camp = p_snp),
 
   cra_int_leads %>%
-    select(SNP_cra = SNP,chr, pos, beta_int_cra = beta_snp, p_int_cra = p_snp),
+    dplyr::select(SNP_cra = SNP,chr, pos, beta_int_cra = beta_snp, p_int_cra = p_snp),
 
   by = c("chr", "pos")
 )
@@ -856,64 +878,70 @@ meta_input <- replicated_hits %>%
   ) %>%
   arrange(p_meta)
 
+write.csv(meta_input,
+          file.path(dirs["meta_tables_dir"], "CAMP_CRA_leadSNP_meta_analysis.csv"),
+          row.names = FALSE)
+
 meta_input
 ```
 
 
 ```{r save-tables-1}
-write.csv(top_camp,
-          file.path(out_dir, "top50_CAMP_base.csv"),
-          row.names = FALSE)
-
-write.csv(top_cra,
-          file.path(out_dir, "top50_CRA_base.csv"),
-          row.names = FALSE)
 
 write.csv(top_camp_pos,
-          file.path(out_dir, "top50_CAMP_base_with_pos.csv"),
+          file.path(qtl_followup_tables_dir, "CAMP_top50_base_hits_with_position.csv"),
           row.names = FALSE)
 
 write.csv(top_cra_pos,
-          file.path(out_dir, "top50_CRA_base_with_pos.csv"),
+          file.path(qtl_followup_tables_dir, "CRA_top50_base_hits_with_position.csv"),
           row.names = FALSE)
 
 write.csv(overlap_snps,
-          file.path(out_dir, "overlap_top50_CAMP_CRA_by_chr_pos.csv"),
+          file.path(qtl_followup_tables_dir, "CAMP_CRA_overlap_top50_by_position.csv"),
           row.names = FALSE)
 
 write.csv(camp_hits,
-          file.path(out_dir, "overlap_hits_CAMP.csv"),
+          file.path(qtl_followup_tables_dir, "CAMP_overlap_hits.csv"),
           row.names = FALSE)
 
 write.csv(cra_hits,
-          file.path(out_dir, "overlap_hits_CRA.csv"),
+          file.path(qtl_followup_tables_dir, "CRA_overlap_hits.csv"),
           row.names = FALSE)
 
-replicated_hits <- inner_join(
-  camp_hits,
-  cra_hits,
-  by = "pos",
-  suffix = c("_camp", "_cra")
-)
-
 write.csv(replicated_hits,
-          file.path(out_dir, "replicated_hits_CAMP_CRA.csv"),
+          file.path(qtl_followup_tables_dir, "CAMP_CRA_replicated_hits.csv"),
           row.names = FALSE)
 
 write.csv(camp_leads,
-          file.path(out_dir, "lead3_CAMP_base.csv"),
+          file.path(qtl_followup_tables_dir, "CAMP_lead3_base_hits.csv"),
           row.names = FALSE)
 
 write.csv(cra_leads,
-          file.path(out_dir, "lead3_CRA_base.csv"),
+          file.path(qtl_followup_tables_dir, "CRA_lead3_base_hits.csv"),
           row.names = FALSE)
 
 write.csv(camp_int_leads,
-          file.path(out_dir, "lead3_CAMP_interaction.csv"),
+          file.path(qtl_followup_tables_dir, "CAMP_lead3_interaction_hits.csv"),
           row.names = FALSE)
 
 write.csv(cra_int_leads,
-          file.path(out_dir, "lead3_CRA_interaction.csv"),
+          file.path(qtl_followup_tables_dir, "CRA_lead3_interaction_hits.csv"),
+          row.names = FALSE)
+
+write.csv(cond_results_camp,
+          file.path(qtl_followup_tables_dir, "CAMP_pairwise_conditional_models.csv"),
+          row.names = FALSE)
+
+write.csv(cond_results_cra,
+          file.path(qtl_followup_tables_dir, "CRA_pairwise_conditional_models.csv"),
+          row.names = FALSE)
+
+write.csv(broom::tidy(fit3_camp),
+          file.path(qtl_followup_tables_dir, "CAMP_three_snp_model.csv"),
+          row.names = FALSE)
+
+write.csv(broom::tidy(fit3_cra),
+          file.path(qtl_followup_tables_dir, "CRA_three_snp_model.csv"),
           row.names = FALSE)
 
 ```

@@ -693,3 +693,27 @@ shared_hits <- inner_join(
 write_csv(shared_hits, file.path(outdir, "models", "shared_miRNA_interaction_summary.csv"))
 head(shared_hits)
 ```
+
+```{r}
+meta_results <- shared_hits |>
+  rowwise() |>
+  mutate(
+    meta = list(
+      metagen(
+        TE = c(beta_camp, beta_cra),
+        seTE = c(se_camp, se_cra),
+        studlab = c("CAMP", "CRA"),
+        sm = "OR",
+        method.tau = "DL",
+        comb.fixed = TRUE,
+        comb.random = FALSE
+      )
+    ),
+    meta_beta = meta$TE.fixed,
+    meta_se = meta$seTE.fixed,
+    meta_p = meta$pval.fixed,
+    meta_OR = exp(meta_beta)
+  ) |>
+  dplyr::select(miRNA, meta_OR, meta_p)
+```
+
