@@ -239,15 +239,52 @@ extract_glm_term <- function(model, term_name) {
   )
 }
 
-run_interaction_scan <- function(log_mat, pheno_df, outcome_col, treatment_col, treatment_term) {
+run_interaction_scan <- function(
+  log_mat,
+  pheno_df,
+  outcome_col,
+  treatment_col,
+  treatment_term,
+  covars = NULL
+) {
   mirs <- rownames(log_mat)
+
   map_dfr(mirs, function(mir) {
     dat <- pheno_df
     dat$mir_expr <- as.numeric(log_mat[mir, rownames(pheno_df)])
 
-    fit_all <- glm(as.formula(paste(outcome_col, "~", treatment_col, "* mir_expr")), data = dat, family = binomial())
-    fit_treated <- glm(as.formula(paste(outcome_col, "~ mir_expr")), data = dat |> filter(.data[[treatment_col]] == levels(dat[[treatment_col]])[2]), family = binomial())
-    fit_untreated <- glm(as.formula(paste(outcome_col, "~ mir_expr")), data = dat |> filter(.data[[treatment_col]] == levels(dat[[treatment_col]])[1]), family = binomial())
+    needed_cols <- unique(c(outcome_col, treatment_col, "mir_expr", covars))
+    dat <- dat |>
+      dplyr::select(all_of(needed_cols)) |>
+      tidyr::drop_na()
+
+    full_rhs <- paste(c(
+      paste0(treatment_col, " * mir_expr"),
+      covars
+    ), collapse = " + ")
+
+    fit_all <- glm(
+      as.formula(paste(outcome_col, "~", full_rhs)),
+      data = dat,
+      family = binomial()
+    )
+
+    treated_level <- levels(dat[[treatment_col]])[2]
+    untreated_level <- levels(dat[[treatment_col]])[1]
+
+    strat_rhs <- paste(c("mir_expr", covars), collapse = " + ")
+
+    fit_treated <- glm(
+      as.formula(paste(outcome_col, "~", strat_rhs)),
+      data = dat |> filter(.data[[treatment_col]] == treated_level),
+      family = binomial()
+    )
+
+    fit_untreated <- glm(
+      as.formula(paste(outcome_col, "~", strat_rhs)),
+      data = dat |> filter(.data[[treatment_col]] == untreated_level),
+      family = binomial()
+    )
 
     inter <- extract_glm_term(fit_all, treatment_term)
     treated <- extract_glm_term(fit_treated, "mir_expr")
@@ -255,6 +292,7 @@ run_interaction_scan <- function(log_mat, pheno_df, outcome_col, treatment_col, 
 
     tibble(
       miRNA = mir,
+      n_all = nobs(fit_all),
       OR_interaction = inter$or,
       p_val_interaction = inter$p_value,
       se_interaction = inter$se,
@@ -381,9 +419,11 @@ camp_pheno_merged <- camp_pheno_merged |>
     outcome = factor(ifelse(EDHOS_cum_Y1 < 1, "low", "high")),
     outcome = relevel(outcome, ref = "low"),
     treatment = factor(TG),
-    treatment = relevel(treatment, ref = "3")
+    treatment = relevel(treatment, ref = "3"),
+    SEX.x = factor(SEX.x)
   )
 
+camp_pheno_merged$RACE.x = factor(camp_pheno_merged$RACE.x)
 common_camp <- intersect(colnames(camp_mat), rownames(camp_pheno_merged))
 camp_mat <- camp_mat[, common_camp, drop = FALSE]
 camp_pheno_merged <- camp_pheno_merged[common_camp, , drop = FALSE]
@@ -458,7 +498,8 @@ camp_results <- run_interaction_scan(
   pheno_df = camp_pheno_merged,
   outcome_col = "outcome",
   treatment_col = "treatment",
-  treatment_term = "treatment1:mir_expr"
+  treatment_term = "treatment1:mir_expr",
+  covars = c("AGE.x", "SEX.x", "RACE.x")
 )
 
 write_csv(camp_results, file.path(outdir, "models", "camp_interaction_results.csv"))
@@ -518,7 +559,8 @@ cra_pheno_merged <- cra_pheno_merged |>
   mutate(
     outcome = factor(Hospitalized_Asthma_Last_Yr),
     treatment = factor(Inhaled_Steroids),
-    treatment = relevel(treatment, ref = "1")
+    treatment = relevel(treatment, ref = "1"),
+    gender.x = factor(gender.x)
   )
 
 common_cra <- intersect(colnames(cra_mat), rownames(cra_pheno_merged))
@@ -595,7 +637,8 @@ cra_results <- run_interaction_scan(
   pheno_df = cra_pheno_merged,
   outcome_col = "outcome",
   treatment_col = "treatment",
-  treatment_term = "treatment2:mir_expr"
+  treatment_term = "treatment2:mir_expr",
+  covars = c("age.x", "gender.x")
 )
 
 write_csv(cra_results, file.path(outdir, "models", "cra_interaction_results.csv"))
