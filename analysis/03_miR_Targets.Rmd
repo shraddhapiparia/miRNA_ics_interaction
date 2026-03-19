@@ -1,0 +1,181 @@
+---
+title: "Target search for miR-584-5p and SH3TC2"
+output: html_document
+---
+
+```{r setup, message=FALSE, warning=FALSE}
+# Install once if needed:
+# if (!requireNamespace("BiocManager", quietly = TRUE)) install.packages("BiocManager")
+# BiocManager::install("multiMiR")
+# BiocManager::install("clusterProfiler")
+# BiocManager::install("ReactomePA")
+# BiocManager::install("org.Hs.eg.db")
+# rm(list=ls())
+library(multiMiR)
+library(dplyr)
+library(tibble)
+library(clusterProfiler)
+library(ReactomePA)
+library(org.Hs.eg.db)
+library(ggplot2)
+library(knitr)
+```
+
+```{r}
+mir_name <- "hsa-miR-584-5p"
+
+# Query experimentally validated targets only
+res_valid <- get_multimir(
+  mirna = mir_name,
+  table = "validated",
+  summary = FALSE
+)
+
+df_valid <- as_tibble(res_valid@data)
+
+# Keep validated sources used in manuscript
+validated_targets <- df_valid %>%
+  filter(!is.na(target_symbol)) %>%
+  filter(tolower(database) %in% c("mirtarbase", "tarbase", "mirecords")) %>%
+  pull(target_symbol) %>%
+  unique() %>%
+  sort()
+
+cat("Total validated unique targets:", length(validated_targets), "\n")
+
+write.table(
+  validated_targets,
+  file = "../results/mir584_validated_targets.txt",
+  quote = FALSE,
+  row.names = FALSE,
+  col.names = FALSE
+)
+```
+```{r}
+res_all <- get_multimir(
+  mirna = mir_name,
+  table = "predicted",
+  summary = FALSE
+)
+
+df_all <- as_tibble(res_all@data)
+
+all_targets <- df_all %>%
+  filter(!is.na(target_symbol)) %>%
+  pull(target_symbol) %>%
+  unique()
+
+cat("Total all unique targets:", length(all_targets), "\n")
+sh3tc2_present <- "SH3TC2" %in% all_targets
+cat("Is SH3TC2 a validated target in these databases? ", sh3tc2_present, "\n")
+```
+
+```{r}
+
+
+sh3tc2_hits <- df_valid %>%
+  filter(target_symbol == "SH3TC2") %>%
+  distinct()
+
+if (nrow(sh3tc2_hits) > 0) {
+  kable(sh3tc2_hits)
+}
+```
+
+
+```{r}
+gene_df <- bitr(
+  all_targets,
+  fromType = "SYMBOL",
+  toType = "ENTREZID",
+  OrgDb = org.Hs.eg.db
+)
+
+cat("Mapped genes:", nrow(gene_df), "\n")
+
+# Save mapped IDs
+write.csv(gene_df, "../results/mir584_targets_symbol_to_entrez.csv", row.names = FALSE)
+```
+
+
+
+
+```{r}
+reactome_result <- enrichPathway(
+  gene = unique(gene_df$ENTREZID),
+  organism = "human",
+  pvalueCutoff = 0.05,
+  pAdjustMethod = "BH",
+  readable = TRUE
+)
+
+reactome_df <- as.data.frame(reactome_result) %>%
+  filter(Count >= 3)
+
+write.csv(
+  reactome_df,
+  "../results/miR-584-5p_reactome_enrichment_validated.csv",
+  row.names = FALSE
+)
+
+kable(head(reactome_df, 20))
+```
+
+```{r}
+if (nrow(as.data.frame(reactome_result)) > 0) {
+  p_reactome <- dotplot(
+    reactome_result,
+    showCategory = 20,
+    x = "GeneRatio",
+    color = "p.adjust",
+    size = "Count"
+  ) +
+    ggtitle("Reactome enrichment for validated miR-584-5p targets") +
+    theme_minimal()
+
+  print(p_reactome)
+
+  ggsave(
+    filename = "../results/PathwayEnrichment_miR584_validated.png",
+    plot = p_reactome,
+    width = 8,
+    height = 10,
+    dpi = 600
+  )
+}
+```
+```{r}
+# Broad GO search to identify glucocorticoid-related terms
+go_result_all <- enrichGO(
+  gene = unique(gene_df$ENTREZID),
+  OrgDb = org.Hs.eg.db,
+  ont = "BP",
+  keyType = "ENTREZID",
+  readable = TRUE,
+  pAdjustMethod = "BH",
+  pvalueCutoff = 1,
+  qvalueCutoff = 1
+)
+
+go_all_df <- as.data.frame(go_result_all)
+
+# gc_hits <- go_all_df %>% filter(grepl("glucocorticoid", Description, ignore.case = TRUE))
+gc_hits <- go_all_df %>% filter(ID == "GO:0051384")
+kable(gc_hits)
+
+if (nrow(gc_hits) > 0) {
+  gc_overlap_genes <- strsplit(gc_hits$geneID[1], "/")[[1]]
+  cat("Genes overlapping first glucocorticoid-related GO term:\n")
+  print(gc_overlap_genes)
+
+  write.table(
+    gc_overlap_genes,
+    file = "../results/mir584_glucocorticoid_overlap_genes.txt",
+    quote = FALSE,
+    row.names = FALSE,
+    col.names = FALSE
+  )
+}
+```
+
+

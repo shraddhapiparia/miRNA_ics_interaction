@@ -108,9 +108,9 @@ camp_link2 <- camp_link %>%
 
 camp_miR584 <- camp_miR584 %>%
   mutate(svid = as.character(svid))
-
+colnames(camp_snp) <- trimws(colnames(camp_snp))
 camp_snp2 <- camp_snp %>%
-  rename(pedid = FID, subid = IID) %>%
+  dplyr::rename(pedid = FID, subid = IID) %>%
   mutate(across(c(pedid, subid), as.character))
 
 camp_map <- camp_pheno2 %>%
@@ -122,7 +122,7 @@ camp_map <- camp_pheno2 %>%
   dplyr::select(campid, pedid, subid, TG, AGE, SEX, EDHOS_cum_Y1)
 
 camp_link_std <- camp_link2 %>%
-  rename(
+  dplyr::rename(
     campid = CAMP_ID,
     svid = row.names.CAMP_492_COUNT.Trans.
   )
@@ -145,7 +145,8 @@ camp_df$miRNA584_norm <- qnorm((rank(camp_df$miRNA584) - 0.5) / length(camp_df$m
 
 
 ```{r camp-outcome}
-lead_snp_camp <- "X5.149061758.C.T_C"   # rs36047
+lead_snp_camp <- c("X5.149061758.C.T_C","X5.149031357.A.C_A", "X5.149121003.G.A_A")
+
 camp_df <- camp_df |>
   filter(!is.na(EDHOS_cum_Y1)) |>
   mutate(
@@ -155,49 +156,149 @@ camp_df <- camp_df |>
     treatment = relevel(treatment, ref = "3"),
     SEX.x = factor(SEX.x)
   )
-stopifnot(lead_snp_camp %in% names(camp_df))
+# stopifnot(lead_snp_camp %in% names(camp_df))
 ```
 
 ## CAMP SNP -> exacerbation check
 
 ```{r camp-snp-to-outcome}
-camp_snp_outcome <- glm(
-  outcome ~ `X5.149061758.C.T_C` + AGE.x + SEX.x +
-    PC1 + PC2 + PC3 + PC4 + PC5 + PC6 + PC7 + PC8 + PC9 + PC10,
-  data = camp_df,
-  family = binomial()
-)
+results_list <- list()
 
-summary(camp_snp_outcome)
-broom::tidy(camp_snp_outcome, exponentiate = TRUE, conf.int = TRUE)
+for (snp in lead_snp_camp) {
+
+  # build formula safely
+  formula_str <- paste0(
+    "outcome ~ `", snp, "` + AGE.x + SEX.x + ",
+    "PC1 + PC2 + PC3 + PC4 + PC5 + PC6 + PC7 + PC8 + PC9 + PC10"
+  )
+
+  model <- glm(
+    as.formula(formula_str),
+    data = camp_df,
+    family = binomial()
+  )
+
+  # extract only SNP row
+  res <- broom::tidy(model, exponentiate = TRUE, conf.int = TRUE) %>%
+    filter(term == snp) %>%
+    mutate(SNP = snp)
+
+  results_list[[snp]] <- res
+}
+
+# combine all results
+final_results <- bind_rows(results_list)
+
+final_results
 ```
+
+## CAMP SNP -> exacerbation check for ICS subgroup
+
+```{r camp-snp-to-outcome}
+results_list <- list()
+ics_df = camp_df[camp_df$TG==1,]
+for (snp in lead_snp_camp) {
+
+  # build formula safely
+  formula_str <- paste0(
+    "outcome ~ `", snp, "` + AGE.x + SEX.x + ",
+    "PC1 + PC2 + PC3 + PC4 + PC5 + PC6 + PC7 + PC8 + PC9 + PC10"
+  )
+
+  model <- glm(
+    as.formula(formula_str),
+    data = ics_df,
+    family = binomial()
+  )
+
+  # extract only SNP row
+  res <- broom::tidy(model, exponentiate = TRUE, conf.int = TRUE) %>%
+    filter(term == snp) %>%
+    mutate(SNP = snp)
+
+  results_list[[snp]] <- res
+}
+
+# combine all results
+ics_results <- bind_rows(results_list)
+
+ics_results
+```
+
 
 ## CAMP SNP -> miRNA mediator model
 
 ```{r camp-mediator-model}
-camp_med_fit <- lm(
-  miRNA584_norm ~ `X5.149061758.C.T_C` + AGE.x + SEX.x + treatment_grp +
-    PC1 + PC2 + PC3 + PC4 + PC5 + PC6 + PC7 + PC8 + PC9 + PC10,
-  data = camp_df
-)
+results_list <- list()
+covars <- c("AGE.x", "SEX.x", paste0("PC", 1:10))
 
-summary(camp_med_fit)
-broom::tidy(camp_med_fit)
+for (snp in lead_snp_camp) {
+
+  # build formula safely
+  formula_str <- paste0(
+    "miRNA584_norm ~ `", snp, "` + AGE.x + SEX.x + treatment_grp + ",
+    "PC1 + PC2 + PC3 + PC4 + PC5 + PC6 + PC7 + PC8 + PC9 + PC10"
+  )
+
+  camp_med_fit <- lm(
+    as.formula(formula_str),
+    data = camp_df
+  )
+  # camp_med_fit <- lm(
+  # miRNA584_norm ~ `X5.149061758.C.T_C` + AGE.x + SEX.x + treatment_grp +
+  #   PC1 + PC2 + PC3 + PC4 + PC5 + PC6 + PC7 + PC8 + PC9 + PC10,
+  # data = camp_df
+  # )
+
+  # extract 
+  res <- broom::tidy(camp_med_fit, conf.int = TRUE) %>%
+    filter(!term %in% covars) %>%   # remove covariates
+    mutate(SNP_tested = snp)
+
+  results_list[[snp]] <- res
+}
+
+# combine all results
+final_results <- bind_rows(results_list)
+
+final_results
+
 ```
 
 ## CAMP miRNA -> exacerbation outcome model with interaction
 
 ```{r camp-outcome-model-interaction}
-camp_out_fit_int <- glm(
-  outcome ~ `X5.149061758.C.T_C` + miRNA584_norm * treatment_grp +
-    AGE.x + SEX.x +
-    PC1 + PC2 + PC3 + PC4 + PC5 + PC6 + PC7 + PC8 + PC9 + PC10,
-  data = camp_df,
-  family = binomial()
-)
+covars <- c("AGE.x", "SEX.x", paste0("PC", 1:10))
 
-summary(camp_out_fit_int)
-broom::tidy(camp_out_fit_int, exponentiate = TRUE, conf.int = TRUE)
+results_list <- list()
+model_list <- list()
+
+for (snp in lead_snp_camp) {
+
+  formula_str <- paste0(
+    "outcome ~ `", snp, "` + miRNA584_norm * treatment_grp + ",
+    "AGE.x + SEX.x + ",
+    "PC1 + PC2 + PC3 + PC4 + PC5 + PC6 + PC7 + PC8 + PC9 + PC10"
+  )
+
+  fit <- glm(
+    as.formula(formula_str),
+    data = camp_df,
+    family = binomial()
+  )
+
+  model_list[[snp]] <- fit
+
+  res <- broom::tidy(fit, exponentiate = TRUE, conf.int = TRUE) %>%
+    filter(!term %in% covars) %>%   # remove covariates
+    mutate(SNP_tested = snp)
+
+  results_list[[snp]] <- res
+}
+
+final_results_int <- bind_rows(results_list)
+
+final_results_int
 ```
 
 ## CAMP pooled mediation without interaction
