@@ -149,10 +149,10 @@ Due to cohort data use agreements and patient privacy restrictions raw data are 
 
 ## What this project demonstrates
 
-- Ability to design and execute end-to-end statistical analysis on biological data  
-- Experience with multi-step workflows: normalization, modeling, genetic association, and pathway analysis  
+- End-to-end modeling of treatment response using statistical and machine learning approaches 
+- Experience with workflows: normalization, modeling, genetic association, and pathway analysis  
 - Application of interaction models to study treatment response (ICS × miRNA)  
-- Integration of multi-level data: miRNA expression, genotype (cis-miR-QTL), and clinical outcomes  
+- Integration of diverse data: miRNA expression, genotype (cis-miR-QTL), and clinical outcomes  
 - Use of mediation analysis to explore potential biological mechanisms  
 - Focus on reproducibility and well-structured analytical workflows  
 
