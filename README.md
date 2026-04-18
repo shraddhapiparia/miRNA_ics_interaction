@@ -145,7 +145,7 @@ Package versions used for the analysis can be reproduced using:
 
 miR-584-5p emerged as a candidate modifier of inhaled corticosteroid response. Interaction modeling identified significant ICS × miRNA effects, with miR-584-5p showing stronger association with asthma outcomes in ICS-treated subjects than in non-ICS subjects.
 
-![Interaction effects](figures/CAMP_OR_int.png)
+![Interaction effects]<img src="figures/CAMP_OR_int.png" width="700">
 
 *Interaction analysis across candidate miRNAs. miR-584-5p was among the strongest ICS × miRNA interaction signals.*
 
