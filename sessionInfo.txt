@@ -1,0 +1,88 @@
+R version 4.5.2 (2025-10-31)
+Platform: aarch64-apple-darwin20
+Running under: macOS Tahoe 26.4.1
+
+Matrix products: default
+BLAS:   /System/Library/Frameworks/Accelerate.framework/Versions/A/Frameworks/vecLib.framework/Versions/A/libBLAS.dylib 
+LAPACK: /Library/Frameworks/R.framework/Versions/4.5-arm64/Resources/lib/libRlapack.dylib;  LAPACK version 3.12.1
+
+locale:
+[1] en_US.UTF-8/en_US.UTF-8/en_US.UTF-8/C/en_US.UTF-8/en_US.UTF-8
+
+time zone: America/Los_Angeles
+tzcode source: internal
+
+attached base packages:
+[1] stats4    stats     graphics  grDevices utils     datasets  methods  
+[8] base     
+
+other attached packages:
+ [1] tidyr_1.3.2                 tibble_3.3.1               
+ [3] stringr_1.6.0               scales_1.4.0               
+ [5] readr_2.2.0                 ReactomePA_1.54.0          
+ [7] purrr_1.2.2                 pROC_1.19.0.1              
+ [9] preprocessCore_1.72.0       patchwork_1.3.2            
+[11] org.Hs.eg.db_3.22.0         AnnotationDbi_1.72.0       
+[13] multiMiR_1.32.0             meta_8.3-0                 
+[15] metadat_1.4-0               metabook_0.2-0             
+[17] mediation_4.5.1             sandwich_3.1-1             
+[19] mvtnorm_1.3-6               Matrix_1.7-5               
+[21] MASS_7.3-65                 knitr_1.51                 
+[23] ggrepel_0.9.8               ggplot2_4.0.2              
+[25] forcats_1.0.1               edgeR_4.8.2                
+[27] limma_3.66.0                dplyr_1.2.1                
+[29] DESeq2_1.50.2               SummarizedExperiment_1.40.0
+[31] Biobase_2.70.0              MatrixGenerics_1.22.0      
+[33] matrixStats_1.5.0           GenomicRanges_1.62.1       
+[35] Seqinfo_1.0.0               IRanges_2.44.0             
+[37] S4Vectors_0.48.1            BiocGenerics_0.56.0        
+[39] generics_0.1.4              clusterProfiler_4.18.4     
+[41] broom_1.0.12               
+
+loaded via a namespace (and not attached):
+  [1] splines_4.5.2           bitops_1.0-9            ggplotify_0.1.3        
+  [4] R.oo_1.27.1             polyclip_1.10-7         graph_1.88.1           
+  [7] XML_3.99-0.23           rpart_4.1.27            lifecycle_1.0.5        
+ [10] Rdpack_2.6.6            lattice_0.22-9          backports_1.5.1        
+ [13] magrittr_2.0.5          metafor_4.8-0           Hmisc_5.2-5            
+ [16] rmarkdown_2.31          otel_0.2.0              ggtangle_0.1.1         
+ [19] cowplot_1.2.0           DBI_1.3.0               minqa_1.2.8            
+ [22] RColorBrewer_1.1-3      abind_1.4-8             R.utils_2.13.0         
+ [25] ggraph_2.2.2            RCurl_1.98-1.18         yulab.utils_0.2.4      
+ [28] nnet_7.3-20             tweenr_2.0.3            rappdirs_0.3.4         
+ [31] gdtools_0.5.0           enrichplot_1.30.5       tidytree_0.4.7         
+ [34] reactome.db_1.95.0      codetools_0.2-20        DelayedArray_0.36.1    
+ [37] DOSE_4.4.0              xml2_1.5.2              ggforce_0.5.0          
+ [40] tidyselect_1.2.1        aplot_0.2.9             farver_2.1.2           
+ [43] viridis_0.6.5           lme4_2.0-1              base64enc_0.1-6        
+ [46] mathjaxr_2.0-0          jsonlite_2.0.0          tidygraph_1.3.1        
+ [49] Formula_1.2-5           systemfonts_1.3.2       tools_4.5.2            
+ [52] ggnewscale_0.5.2        treeio_1.34.0           Rcpp_1.1.1             
+ [55] glue_1.8.0              gridExtra_2.3           SparseArray_1.10.10    
+ [58] xfun_0.57               qvalue_2.42.0           withr_3.0.2            
+ [61] numDeriv_2016.8-1.1     fastmap_1.2.0           boot_1.3-32            
+ [64] digest_0.6.39           R6_2.6.1                gridGraphics_0.5-1     
+ [67] colorspace_2.1-2        GO.db_3.22.0            lpSolve_5.6.23         
+ [70] dichromat_2.0-0.1       RSQLite_2.4.6           R.methodsS3_1.8.2      
+ [73] fontLiberation_0.1.0    data.table_1.18.2.1     graphlayouts_1.2.3     
+ [76] httr_1.4.8              htmlwidgets_1.6.4       S4Arrays_1.10.1        
+ [79] scatterpie_0.2.6        graphite_1.56.0         pkgconfig_2.0.3        
+ [82] gtable_0.3.6            blob_1.3.0              S7_0.2.1               
+ [85] XVector_0.50.0          htmltools_0.5.9         fontBitstreamVera_0.1.1
+ [88] fgsea_1.36.2            png_0.1-9               reformulas_0.4.4       
+ [91] ggfun_0.2.0             rstudioapi_0.18.0       tzdb_0.5.0             
+ [94] reshape2_1.4.5          checkmate_2.3.4         nlme_3.1-169           
+ [97] nloptr_2.2.1            cachem_1.1.0            zoo_1.8-15             
+[100] parallel_4.5.2          foreign_0.8-91          pillar_1.11.1          
+[103] grid_4.5.2              vctrs_0.7.3             tidydr_0.0.6           
+[106] cluster_2.1.8.2         htmlTable_2.4.3         evaluate_1.0.5         
+[109] cli_3.6.6               locfit_1.5-9.12         compiler_4.5.2         
+[112] rlang_1.2.0             crayon_1.5.3            plyr_1.8.9             
+[115] fs_2.0.1                ggiraph_0.9.6           stringi_1.8.7          
+[118] viridisLite_0.4.3       BiocParallel_1.44.0     Biostrings_2.78.0      
+[121] lazyeval_0.2.3          CompQuadForm_1.4.4      GOSemSim_2.36.0        
+[124] fontquiver_0.2.1        hms_1.1.4               bit64_4.6.0-1          
+[127] KEGGREST_1.50.0         statmod_1.5.1           rbibutils_2.4.1        
+[130] igraph_2.2.3            memoise_2.0.1           ggtree_4.0.5           
+[133] fastmatch_1.1-8         bit_4.6.0               ape_5.8-1              
+[136] gson_0.1.0             
