@@ -136,8 +136,8 @@ Key outputs:
 
 Package versions used for the analysis can be reproduced using:
 
-- `scripts/session_info.R`
-- `renv` environment lockfile
+- Rscript run_all.R
+- Rscript scripts/session_info.R
 
 ---
 
