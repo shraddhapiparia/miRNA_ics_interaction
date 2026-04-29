@@ -52,30 +52,41 @@ Quality control plots generated:
 - Mean–variance (mean–SD) trends
 - Cross-method correlation plots
 
+<img src="results/qc/merged_density_plot.png" width="350">
+<img src="results/qc/merged_mean_sd.png" width="350">
+
+*Normalization QC showed that quantile normalization improved cross-sample distribution alignment and reduced mean-SD dependence compared with raw, TMM, and DESeq2-normalized values. Mean–SD trends further show reduced variance dependence on expression level after quantile normalization.*
+
 ### 3. Demographic summaries
 
 - Continuous variables (t-tests)
 - Categorical variables (chi-square tests)
 - Violin plots by treatment group
 
-### 4. Interaction analysis
+### 4. Interaction analysis and replication
 
 For each miRNA:
-Outcome ~ ICS * miRNA expression
+Outcome ~ ICS * miRNA expression + covariates
 
-Models produce:
+- Interaction models fitted in CAMP (discovery)
+- Replication tested in CRA cohort
+- Effect estimates include:
+  - interaction odds ratios
+  - stratified effects by treatment group
+  - multiple testing correction (FDR)
 
-- interaction odds ratios
-- stratified odds ratios
-- adjusted p-values (FDR)
+For sensitivity analysis, we evaluated models using an ordinal representation of excerbation severity in CAMP cohort:
+exacerbation_ordered ~ ICS * miRNA expression + covariates
 
-### 5. Follow-up analysis
+### 5. Meta-analysis of replicated signals
 
-Focused analysis for **miR-584-5p** including downstream genetic and mechanistic follow-up:
+For miRNAs showing consistent effects across cohorts (e.g., miR-584-5p), results were combined using fixed-effect inverse-variance weighted meta-analysis.
 
-- predicted probability curves
-- AUC evaluation
-- stratified treatment analysis
+- Combined effect sizes were calculated on the log(OR) scale
+- Standard errors were used for weighting
+- Sensitivity analyses included Fisher’s and Stouffer’s methods for p-value combination
+
+This step provides a unified estimate of the interaction effect across cohorts.
 
 ### 6. cis-miR-QTL analysis
 
@@ -125,10 +136,7 @@ Steps:
 - Combined results across databases (miRTarBase, TarBase, miRecords)
 - Performed pathway enrichment analysis (Reactome, GO)
 
-Key outputs:
-
-- List of validated gene targets
-- Enriched pathways related to immune signaling and inflammation
+*Enriched pathways included broad signaling, transcriptional regulation, chromatin organization, and glucocorticoid-response-related target overlap.*
 
 ---
 
@@ -143,15 +151,13 @@ Package versions used for the analysis can be reproduced using:
 
 ## Key Result
 
-miR-584-5p emerged as a candidate modifier of inhaled corticosteroid response. Interaction modeling identified significant ICS × miRNA effects, with miR-584-5p showing stronger association with asthma outcomes in ICS-treated subjects than in non-ICS subjects.
+miR-584-5p emerged as a candidate treatment-effect modifier of ICS-associated exacerbation risk. In the primary interaction models, higher miR-584-5p expression was associated with increased exacerbation risk among ICS-treated subjects, with weaker or absent association in non-ICS subjects.
 
-<img src="figures/CAMP_OR_int.png" width="400">
+In an ordinal proportional-odds sensitivity model, the ICS × miR-584-5p interaction remained nominally significant and directionally consistent (OR = 1.70, Wald p = 0.048), supporting robustness to outcome definition.
 
-*Interaction analysis across candidate miRNAs. miR-584-5p was among the strongest ICS × miRNA interaction signals.*
+<img src="results/figures/mir584_predprob_combined_pub.png" width="350">
 
-<img src="figures/MergedORs.png" width="400">
-
-*Estimated effect of miR-584-5p stratified by cohort and ICS exposure, showing stronger association in ICS-treated individuals.*
+*Adjusted predicted probability curves for miR-584-5p in CAMP and CRA. Predictions were generated from covariate-adjusted interaction models, holding numeric covariates at their mean and categorical covariates at reference levels.*
 
 -----
 
@@ -163,14 +169,12 @@ Due to cohort data use agreements and patient privacy restrictions raw data are 
 
 ## What this project demonstrates
 
-- End-to-end modeling of treatment response using statistical and machine learning approaches 
-- Experience with workflows: normalization, modeling, genetic association, and pathway analysis  
-- Application of interaction models to study treatment response (ICS × miRNA)  
-- Integration of diverse data: miRNA expression, genotype (cis-miR-QTL), and clinical outcomes  
-- Use of mediation analysis to explore potential biological mechanisms  
-- Focus on reproducibility and well-structured analytical workflows  
-
-
+- Reproducible treatment-effect modification analysis using miRNA expression and clinical outcomes
+- Cohort-specific preprocessing, normalization QC, and sample/phenotype alignment
+- Logistic interaction modeling with treatment-stratified effect estimates
+- Sensitivity analyses using linear and ordinal association models where appropriate
+- Careful distinction between effect modification and standalone prediction
+- Integration of miRNA expression, genotype follow-up, and target/pathway interpretation
 
 
 
