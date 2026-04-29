@@ -52,8 +52,8 @@ Quality control plots generated:
 - Mean–variance (mean–SD) trends
 - Cross-method correlation plots
 
-<img src="results/qc/merged_density_plot.png" width="350">
-<img src="results/qc/merged_mean_sd.png" width="350">
+<img src="results/qc/merged_density_plot.png" width="450">
+<img src="results/qc/merged_mean_sd.png" width="450">
 
 *Normalization QC showed that quantile normalization improved cross-sample distribution alignment and reduced mean-SD dependence compared with raw, TMM, and DESeq2-normalized values. Mean–SD trends further show reduced variance dependence on expression level after quantile normalization.*
 
@@ -103,11 +103,25 @@ Key steps:
 - Identified top associated variants (e.g., rs36047 and nearby loci)
 - Assessed linkage disequilibrium (LD) between top SNPs
 
-This analysis connects genetic variation to miRNA regulation.
+This analysis links genetic variation to miRNA regulation, enabling downstream causal interpretation of treatment-response signals (e.g., rs36047 → miR-584-5p → exacerbation risk).
 
 ---
 
-### 7. Mediation analysis
+### 7. miRNA target analysis and pathway context
+
+Identified biologically relevant targets of miR-584-5p and evaluated their role in glucocorticoid-response pathways.
+
+Steps:
+
+- Queried experimentally validated miR-584-5p targets using curated databases
+- Performed targeted lookup for genes involved in glucocorticoid response
+- Evaluated pathway context of these genes using Reactome
+
+*This focused analysis highlighted immune and signaling pathways relevant to asthma and corticosteroid response, including cytokine signaling, MAPK/ERK signaling, PI3K signaling, and nuclear receptor pathways.*
+
+---
+
+### 8. Mediation analysis
 
 Tested whether miR-584-5p mediates the effect of genetic variants on exacerbation risk.
 
@@ -126,20 +140,6 @@ This provides insight into potential mechanistic pathways linking genotype to cl
 
 ---
 
-### 8. miRNA target analysis and pathway enrichment
-
-Identified downstream gene targets of miR-584-5p and evaluated biological pathways.
-
-Steps:
-
-- Queried validated and predicted targets using multiMiR
-- Combined results across databases (miRTarBase, TarBase, miRecords)
-- Performed pathway enrichment analysis (Reactome, GO)
-
-*Enriched pathways included broad signaling, transcriptional regulation, chromatin organization, and glucocorticoid-response-related target overlap.*
-
----
-
 ## Reproducibility
 
 Package versions used for the analysis can be reproduced using:
@@ -155,9 +155,11 @@ miR-584-5p emerged as a candidate treatment-effect modifier of ICS-associated ex
 
 In an ordinal proportional-odds sensitivity model, the ICS × miR-584-5p interaction remained nominally significant and directionally consistent (OR = 1.70, Wald p = 0.048), supporting robustness to outcome definition.
 
-<img src="results/figures/mir584_predprob_combined_pub.png" width="350">
+<img src="results/figures/mir584_predprob_combined_pub.png" width="450">
 
 *Adjusted predicted probability curves for miR-584-5p in CAMP and CRA. Predictions were generated from covariate-adjusted interaction models, holding numeric covariates at their mean and categorical covariates at reference levels.*
+
+Follow-up analyses showed that miR-584-5p is genetically regulated (cis-miR-QTL) and targets genes enriched in glucocorticoid-response pathways, supporting a biologically plausible mechanism for ICS response heterogeneity.
 
 -----
 
@@ -169,12 +171,10 @@ Due to cohort data use agreements and patient privacy restrictions raw data are 
 
 ## What this project demonstrates
 
-- Reproducible treatment-effect modification analysis using miRNA expression and clinical outcomes
-- Cohort-specific preprocessing, normalization QC, and sample/phenotype alignment
-- Logistic interaction modeling with treatment-stratified effect estimates
-- Sensitivity analyses using linear and ordinal association models where appropriate
-- Careful distinction between effect modification and standalone prediction
-- Integration of miRNA expression, genotype follow-up, and target/pathway interpretation
-
-
-
+- End-to-end pharmacogenomic analysis: from miRNA expression → treatment interaction → genetic regulation → biological interpretation
+- Identification of treatment-effect modifiers using interaction models (ICS × miRNA)
+- Cross-cohort validation and meta-analysis for robust signal prioritization
+- Connecting genetic variation to treatment-response mechanisms through miRNA regulation (cis-miR-QTL)
+- Mechanistic follow-up using miRNA target mapping and pathway enrichment
+- Sensitivity analysis across outcome definitions (binary and ordinal models)
+- Reproducible and modular workflow for multi-cohort bioinformatics analysis
