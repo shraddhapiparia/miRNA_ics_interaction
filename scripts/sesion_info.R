@@ -1,7 +1,6 @@
 # scripts/session_info.R
 # Generate a reproducibility record after running the analysis pipeline
 
-library(tidyverse)
 library(DESeq2)
 library(limma)
 library(edgeR)
