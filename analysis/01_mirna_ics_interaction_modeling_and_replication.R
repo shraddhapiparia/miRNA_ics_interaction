@@ -153,7 +153,7 @@ load_camp <- function() {
   rownames(pheno) <- pheno$`row.names(CAMP_492_COUNT.Trans)`
   pheno <- pheno |> filter(!is.na(EDHOS_cum_Y1)) |>
     mutate(
-      EDHOS_cum_Y1_binary  = factor(ifelse(EDHOS_cum_Y1 < 1, 1, 2), levels = c(1, 2)),
+      EDHOS_cum_Y1_binary  = factor(ifelse(EDHOS_cum_Y1 < 2, 1, 2), levels = c(1, 2)),
       EDHOS_cum_Y1_ordered = factor(pmin(EDHOS_cum_Y1, 3), levels = 0:3, ordered = TRUE),
       treatment = relevel(factor(TG), ref = "3"),
       SEX.x = factor(SEX.x), RACE.x = factor(RACE.x)
